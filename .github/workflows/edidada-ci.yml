@@ -44,5 +44,10 @@ jobs:
           ./build/06_sched/01_nice_effect | head -12
           ./build/06_sched/02_wakeup_latency | head -12
 
+      - name: RSS 拆账冒烟
+        run: |
+          ./build/08_rss_anatomy/rss_breakdown
+          ./build/08_rss_anatomy/cache_probe
+
       - name: 脚本语法
         run: bash -n scripts/build_all.sh qemu/setup.sh qemu/run.sh

@@ -55,6 +55,15 @@
 
 这一组不在用户态跑，要在 QEMU guest 里做：给 `fair.c` 打插桩、重新编译 `bzImage`、看 dmesg 里的 `weight` 和 `vruntime`，再用 `qemu/sched-live.gdb` 断在 `__schedule` 打 20 次调度事件。步骤和实测数字见 `07_sched_kernel/README.md`，内核原理见 `docs/07-sched-deepdive.md` 第 11 节。
 
+## 08_rss_anatomy
+
+| 程序 | 做什么 | 关键观察 |
+| --- | --- | --- |
+| `rss_breakdown` | anon 8MB + 私有映射 64MB + 共享映射 + COW 16MB，每步读 `smaps_rollup` | anon 只有 8MB，RSS 141MB 全是 file-backed；共享映射 RSS 翻倍而 Pss 不变 |
+| `cache_probe` | 写 256MB、`fadvise` 踢缓存、冷热读各一遍 | 进程 VmRSS 一直 1-2MB，全局 Cached 涨 256MB；冷热带宽差 4 倍 |
+
+不依赖 root：容器里 `/proc/sys/vm/drop_caches` 常常只读，`cache_probe` 用 `posix_fadvise` 代替。方法和排查顺序见 `docs/09-rss-anatomy.md`。
+
 
 ## 运行建议
 

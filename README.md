@@ -22,7 +22,8 @@ linux_c_tutorial/
 │   ├── 04_file/              page cache、fsync、dentry cache、inotify
 │   ├── 05_kernel/            内核模块：从内核里读 task_struct
 │   ├── 06_sched/             nice 权重、唤醒延迟
-│   └── 07_sched_kernel/      给内核打插桩、gdb 跟 __schedule（QEMU 里做）
+│   ├── 07_sched_kernel/      给内核打插桩、gdb 跟 __schedule（QEMU 里做）
+│   └── 08_rss_anatomy/       RSS 拆账：anon/file/shmem，page cache vs 进程 RSS
 ├── qemu/                     内核源码编译 + initramfs + gdb 脚本
 ├── scripts/                  编译、观测、快照
 └── docs/
@@ -34,7 +35,8 @@ linux_c_tutorial/
     ├── 05-file.md            VFS 对象、路径解析、写回
     ├── 06-qemu-gdb.md        QEMU + gdb 环境与单步方法
     ├── 07-sched-deepdive.md  调度子系统：数据结构与关键函数
-    └── 08-reading-map.md     《LKD》《ULK》章节对照 + 源码地图
+    ├── 08-reading-map.md     《LKD》《ULK》章节对照 + 源码地图
+    └── 09-rss-anatomy.md     收口：RSS 高但堆不大的闭环排查
 ```
 
 ## 环境
@@ -79,6 +81,8 @@ cd qemu && ./setup.sh        # 下载 6.12 源码、编译带调试信息的内�
 | nice_effect | nice 0/5/10 实测 69.8% / 22.8% / 7.4%，理论 69.7/22.8/7.5 | 必须绑到同一个 CPU，否则 nice 无效 |
 | wakeup_latency | p50 往返 4.4 us，p99 10.7 us，max 702 us | 尾部延迟远大于中位数 |
 | sched 内核侧（QEMU + gdb） | nice 0 权重 1048576、nice 10 权重 112640，实测 CPU 时间比 9.30（理论 9.31）；`__schedule` 的 `sched_mode` 区分 IDLE/NONE/PREEMPT | 改 `fair.c` 插桩后在 dmesg 里直接看到 weight 与 vruntime |
+| rss_breakdown | anon 只占 8MB，RSS 从 1.6MB 涨到 141MB 全是 file-backed；共享映射让 RSS 再加 64MB 而 Pss 不变 | 「RSS 高但堆不大」= file/shmem 的账，不是堆 |
+| cache_probe | 读 256MB，进程 VmRSS 1.2→1.8MB，全局 Cached +256MB；冷读 2723 MB/s vs 热读 11199 MB/s | page cache 是内核的账，不是进程的账 |
 
 数字会随机器变，结论（量级关系）不会。自己跑出来的值才是你的。
 
