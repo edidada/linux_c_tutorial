@@ -227,3 +227,35 @@ echo 20000000 > /proc/sys/kernel/sched_latency_ns  # 20ms
 - 只改 `fair.c` 一个文件的增量编译，在 2 核 + FUSE 文件系统的这台机器上花了 19 分 56 秒（`user` 时间只有 34 秒），瓶颈是 vmlinux 重链接和 gzip 的 I/O。本地 ext4 上通常 1-2 分钟，别拿这台机器的数字当通用结论。
 - guest 里 `nice` 不存在（busybox 没编这个 applet），`taskset`/`renice` 也未必有。造负载要么自己静态编译小程序，要么在宿主机上用 `sched_setaffinity` 写进用户态实验里。
 
+## 12. 走完一次完整切换（gdb 实测）
+
+阶段三的验收标准是「能在 gdb 里走完一次 `__schedule → context_switch → switch_to`」。脚本在 `qemu/switch.gdb`，断在开机时 `kernel_init` 让位给 `kthreadd` 的那一次切换。
+
+**为什么断 `__switch_to` 而不是 `__schedule`**：`__schedule` 里 `prev`/`next` 是局部变量，`-O2` 下断在入口时还没赋值，`p prev->comm` 会直接报优化掉。`__switch_to(prev_p, next_p)` 是真实函数，两个参数一定在寄存器里，能直接打。
+
+```c
+__switch_to (prev_p=0xffff888003598000, next_p=0xffff888003598e80)
+  prev_p->pid = 1        next_p->pid = 2
+  prev_p->comm = "swapper/0"   next_p->comm = "swapper/0"
+  prev_p->thread.sp = 0xffffc9000001...   next_p->thread.sp = 0xffffc9000003...
+  prev_p->thread.fsbase = 0x0             next_p->thread.fsbase = 0x0
+```
+
+三个值得记下来的点：
+
+1. **两个 comm 一样不代表同一个人**。`kernel_init`（pid 1）和 `kthreadd`（pid 2）都是从 `init_task` fork 出来的，comm 被继承成 `swapper/0`，只有 pid 能区分。以后看 `ps` 里一堆同名线程时不奇怪。
+2. **`thread.sp` 就是这次切换的真正落点**。`__switch_to` 末尾把 next 的内核栈指针交给返回路径，`ret` 一弹就回到 next 上次被换出时停下的位置，不是「跳进 next 的函数入口」。
+3. **新任务的栈底是 `ret_from_fork`**。`finish_task_switch` 的 `bt` 显示：
+
+```
+#0 finish_task_switch (prev=0xffff888003598000)   kernel/sched/core.c:5162
+#1 schedule_tail (prev=<optimized out>)           kernel/sched/core.c:5259
+#2 ret_from_fork (..., fn=0xffffffff810c2050 <kthreadd>)  arch/x86/kernel/process.c:143
+#3 ret_from_fork_asm                              arch/x86/entry/entry_64.S:244
+```
+
+新任务不是被「跳」进去的，而是被伪装成刚从 `fork` 系统调用返回：第一次调度时它从 `ret_from_fork_asm` 开始，`fn` 参数就是 `kthreadd` 的入口。这就是 fork 出来的线程「一出生就在跑」的真实样子。
+
+`fsbase` 两边都是 0，因为内核线程没有用户态 TLS；等切到用户进程（比如 busybox sh）时这个值就非 0，TLS 指针也是 context switch 的一部分。
+
+

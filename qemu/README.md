@@ -8,6 +8,7 @@
 | `run.sh` | 启动 guest，默认 `-s -S` 等 gdb 连接 |
 | `gdb.cmd` / `sched.gdb` | gdb 脚本，断在 `start_kernel` 或调度器关键函数 |
 | `sched-live.gdb` | 对已经启动的 guest 直接断 `__schedule`，打印 20 次调度事件后自动 detach |
+| `switch.gdb` | 断 `__switch_to` + `finish_task_switch`，走完一次完整切换（换栈 + ret_from_fork） |
 
 ## 第一次
 
