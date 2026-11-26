@@ -16,7 +16,10 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 KVER=${KVER:-6.12}
 BUILD="$HERE/build"
 KDIR="$BUILD/linux-$KVER"
-KURL="https://cdn.kernel.org/pub/linux/kernel/v${KVER%%.*}.x/linux-$KVER.tar.xz"
+# 默认走阿里云镜像（国内通常比 kernel.org 快一个数量级），可用 KERNEL_MIRROR 覆盖
+MIRROR=${KERNEL_MIRROR:-https://mirrors.aliyun.com/linux-kernel}
+KURL="$MIRROR/v${KVER%%.*}.x/linux-$KVER.tar.xz"
+FALLBACK="https://cdn.kernel.org/pub/linux/kernel/v${KVER%%.*}.x/linux-$KVER.tar.xz"
 
 need() {
     for t in "$@"; do
@@ -41,7 +44,11 @@ mkdir -p "$BUILD"
 if [ ! -d "$KDIR" ]; then
     if [ ! -f "$BUILD/linux-$KVER.tar.xz" ]; then
         echo "下载 $KURL"
-        curl -L --retry 3 -o "$BUILD/linux-$KVER.tar.xz" "$KURL"
+        curl -L --retry 3 --fail -o "$BUILD/linux-$KVER.tar.xz" "$KURL" || {
+            echo "镜像下载失败，回退 kernel.org"
+            rm -f "$BUILD/linux-$KVER.tar.xz"
+            curl -L --retry 3 -o "$BUILD/linux-$KVER.tar.xz" "$FALLBACK"
+        }
     fi
     echo "解压..."
     tar -xf "$BUILD/linux-$KVER.tar.xz" -C "$BUILD"

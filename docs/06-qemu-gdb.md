@@ -11,9 +11,12 @@
 ```bash
 sudo apt install -y qemu-system-x86 flex bison bc libelf-dev libssl-dev \
      cpio xz-utils gdb kmod build-essential
+chmod +x setup.sh run.sh     # 从 Windows 侧 clone 常丢执行位，报 Permission denied 就是它
 cd qemu
 ./setup.sh
 ```
+
+脚本下载内核默认走阿里云镜像（`KERNEL_MIRROR` 可覆盖，失败自动回退 kernel.org）。
 
 脚本步骤：
 

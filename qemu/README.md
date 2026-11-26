@@ -13,10 +13,14 @@
 ```bash
 sudo apt install -y qemu-system-x86 flex bison bc libelf-dev libssl-dev \
      cpio xz-utils gdb kmod build-essential
+chmod +x setup.sh run.sh          # 从 Windows 侧 clone 过来常常丢了执行位
 ./setup.sh
 ```
 
-预计 5-15 分钟（16 核）。产物：
+内核 tarball 默认从阿里云镜像下载（约 12MB/s），可用 `KERNEL_MIRROR=...` 覆盖；
+镜像失败会自动回退 kernel.org。`KVER=6.12` 可换版本。
+
+预计 5-15 分钟（16 核；2 核云主机约 45 分钟）。产物：
 
 ```
 build/linux-6.12/arch/x86/boot/bzImage   启动用
