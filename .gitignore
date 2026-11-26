@@ -8,3 +8,4 @@ qemu/build/
 Module.symvers
 modules.order
 /tmp/
+.idea/
