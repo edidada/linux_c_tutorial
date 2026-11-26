@@ -46,6 +46,18 @@ gcc -O2 -std=gnu11 -o cache_probe  cache_probe.c  && ./cache_probe
 
 `fadvise` 之后 Cached 掉了 262100 kB（约 256MB），读一遍又涨回来；整个过程中进程 VmRSS 从 1.2MB 到 1.8MB，几乎不动。冷读 2722 MB/s、热读 11198 MB/s，差 4 倍——这就是 page cache 命中的价值，和 `labs/04_file/01_page_cache_read` 在 WSL 上测到的 1.24 vs 10.2 GB/s 是同一件事。
 
+GitHub Actions 的 ubuntu-24.04 runner 上是同样的形状，只是冷读慢得多（真磁盘 vs 这台机器的高速 overlay）：
+
+```
+刚写完       Cached=1102612 kB  VmRSS=1552 kB
+踢缓存后     Cached=840724 kB   VmRSS=1872 kB
+第一次读(冷) 0.93 s, 275.7 MB/s
+第二次读(热) 0.02 s, 14479.3 MB/s
+```
+
+`rss_breakdown` 在 runner 上的五步也几乎一致：Anon 8.3MB、File 在共享映射后 132840 kB、Pss 73908 kB 不动、COW 后 Anon 涨到 24688 kB。两台机器数字差在 1% 以内，说明这套账是内核的，不是某台机器的。
+
+
 ## 对应的内核路径
 
 | 用户态动作 | 内核函数 | 账记在哪 |
