@@ -1,0 +1,48 @@
+name: labs-ci
+
+on:
+  push:
+    branches:
+      - main
+      - 'edidada/**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 编译全部实验
+        run: make -j"$(nproc)"
+
+      - name: syscall 冒烟
+        run: |
+          ./build/01_syscall/01_raw_syscall | tee /tmp/raw.txt
+          ./build/01_syscall/02_mini_strace -f 0,1,2,3,59 /bin/echo hi 2>&1 | tail -20
+
+      - name: 进程冒烟
+        run: |
+          ./build/02_process/proc_inspect | head -30
+          ./build/02_process/fork_cow | tail -8
+          ./build/02_process/exec_pipe | head -20
+
+      - name: 内存冒烟
+        run: |
+          ./build/03_memory/01_brk_mmap
+          ./build/03_memory/03_mmap_shared
+          ./build/03_memory/02_page_fault | tail -12
+
+      - name: 文件冒烟
+        run: |
+          ./build/04_file/04_inotify | head -15
+          ./build/04_file/02_fsync_cost | tail -12
+
+      - name: 调度冒烟
+        run: |
+          ./build/06_sched/01_nice_effect | head -12
+          ./build/06_sched/02_wakeup_latency | head -12
+
+      - name: 脚本语法
+        run: bash -n scripts/build_all.sh qemu/setup.sh qemu/run.sh
