@@ -21,7 +21,8 @@ linux_c_tutorial/
 │   ├── 03_memory/            brk vs mmap、缺页、SHARED/PRIVATE 映射
 │   ├── 04_file/              page cache、fsync、dentry cache、inotify
 │   ├── 05_kernel/            内核模块：从内核里读 task_struct
-│   └── 06_sched/             nice 权重、唤醒延迟
+│   ├── 06_sched/             nice 权重、唤醒延迟
+│   └── 07_sched_kernel/      给内核打插桩、gdb 跟 __schedule（QEMU 里做）
 ├── qemu/                     内核源码编译 + initramfs + gdb 脚本
 ├── scripts/                  编译、观测、快照
 └── docs/
@@ -77,6 +78,7 @@ cd qemu && ./setup.sh        # 下载 6.12 源码、编译带调试信息的内�
 | fsync_cost | 每条 fsync 1575 us，每 50 条 58 us，最后刷一次 23.8 us | 等待日志提交的次数决定成本 |
 | nice_effect | nice 0/5/10 实测 69.8% / 22.8% / 7.4%，理论 69.7/22.8/7.5 | 必须绑到同一个 CPU，否则 nice 无效 |
 | wakeup_latency | p50 往返 4.4 us，p99 10.7 us，max 702 us | 尾部延迟远大于中位数 |
+| sched 内核侧（QEMU + gdb） | nice 0 权重 1048576、nice 10 权重 112640，实测 CPU 时间比 9.30（理论 9.31）；`__schedule` 的 `sched_mode` 区分 IDLE/NONE/PREEMPT | 改 `fair.c` 插桩后在 dmesg 里直接看到 weight 与 vruntime |
 
 数字会随机器变，结论（量级关系）不会。自己跑出来的值才是你的。
 

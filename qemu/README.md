@@ -7,6 +7,7 @@
 | `setup.sh` | 下载 6.12 源码，生成带调试信息的内核配置，编译 `bzImage`/`vmlinux`，做 busybox initramfs |
 | `run.sh` | 启动 guest，默认 `-s -S` 等 gdb 连接 |
 | `gdb.cmd` / `sched.gdb` | gdb 脚本，断在 `start_kernel` 或调度器关键函数 |
+| `sched-live.gdb` | 对已经启动的 guest 直接断 `__schedule`，打印 20 次调度事件后自动 detach |
 
 ## 第一次
 

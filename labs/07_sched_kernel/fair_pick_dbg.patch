@@ -1,0 +1,57 @@
+From: linux_c_tutorial <noreply@example.com>
+Subject: [PATCH] sched/fair: 教学用 pick 插桩（打印被选任务与权重）
+
+给 pick_next_task_fair() 加一个极简插桩：每 32 次、且 rq 上 CFS 任务数 >= 2 时，
+打印 prev/next 的 comm、next 的 load.weight、vruntime 与 min_vruntime。
+
+用途：在 guest 里跑不同 nice 的忙循环，用 dmesg 对照 /proc/<pid>/stat 的 utime，
+验证 nice -> load.weight -> CPU 份额这条链路。仅用于实验，不要用在生产内核。
+
+实测（2 核 guest，6.12 defconfig + DEBUG_INFO）：
+  nice 0   -> weight 1048576
+  nice 10  -> weight 112640
+  CPU 时间比 9.30，权重比 9.31
+
+---
+ kernel/sched/fair.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -8872,6 +8872,27 @@ static struct task_struct *pick_task_fair(struct rq *rq)
+ 	return task_of(se);
+ }
+ 
++/* ==== 教学插桩开始 ==== */
++static unsigned long pick_dbg_cnt;
++
++static void pick_dbg(struct rq *rq, struct task_struct *prev, struct task_struct *p)
++{
++	struct cfs_rq *cfs_rq = cfs_rq_of(&p->se);
++
++	if (pick_dbg_cnt++ % 32)
++		return;
++	if (rq->cfs.nr_running < 2)
++		return;
++	printk(KERN_INFO
++	       "pickdbg: prev=%-12s next=%-12s cfs_nr=%d weight=%lu vruntime=%lld min_vr=%lld lag=%lld\n",
++	       prev->comm, p->comm, rq->cfs.nr_running,
++	       (unsigned long)p->se.load.weight,
++	       (long long)p->se.vruntime,
++	       (long long)cfs_rq->min_vruntime,
++	       (long long)(p->se.vruntime - cfs_rq->min_vruntime));
++}
++/* ==== 教学插桩结束 ==== */
++
+ static void __set_next_task_fair(struct rq *rq, struct task_struct *p, bool first);
+ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first);
+ 
+@@ -8886,6 +8907,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
+ 	p = pick_task_fair(rq);
+ 	if (!p)
+ 		goto idle;
++	pick_dbg(rq, prev, p);
+ 	se = &p->se;
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED

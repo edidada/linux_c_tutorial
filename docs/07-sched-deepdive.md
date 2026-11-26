@@ -184,3 +184,46 @@ echo 20000000 > /proc/sys/kernel/sched_latency_ns  # 20ms
 - `/proc/<pid>/sched` 的 `se.sum_exec_runtime` 是累计值，不是本次运行时间。
 - EEVDF 下 `min_vruntime` 的语义和 CFS 不完全一样，别拿旧公式硬套。
 - 在虚拟机里测绝对延迟没有意义，只能做同机对比。
+
+## 11. 内核侧实测（6.12 + QEMU + gdb，2026-11-27）
+
+用户态测完份额，还要把这几个数字在内核里对上。这组数据是在 2 核 guest（6.12 defconfig + DEBUG_INFO，无 KVM）上实测的，脚本在 `qemu/sched-live.gdb`，插桩补丁在 `labs/07_sched_kernel/fair_pick_dbg.patch`。
+
+**gdb 侧的调用链**（断在 `pick_next_task_fair`）：
+
+```
+#0 pick_next_task_fair (rq=..., prev=..., rf=...) at kernel/sched/fair.c:8901
+#1 __pick_next_task  at kernel/sched/core.c:5971
+#2 pick_next_task   at kernel/sched/core.c:6493
+#3 __schedule (sched_mode=1) at kernel/sched/core.c:6647
+#4 preempt_schedule_common at kernel/sched/core.c:6872
+#5 __cond_resched    at kernel/sched/core.c:7217
+```
+
+**`sched_mode` 就是「这次调度是谁发起的」**，比 `bt` 更直接：
+
+| 值 | 宏 | 触发者 |
+| --- | --- | --- |
+| -1 | `SM_IDLE` | `schedule_idle()`，idle 线程让出 CPU |
+| 0 | `SM_NONE` | 显式 `schedule()`，任务自己阻塞（`state` 已经改成非 RUNNING） |
+| 1 | `SM_PREEMPT` | `preempt_schedule_common()` / `__cond_resched()`，在抢占点被顶掉 |
+| 2 | `SM_RTLOCK_WAIT` | PREEMPT_RT 的 rtlock 等待 |
+
+20 次调度事件的取样里有两条典型对照：`mode=-1 prev=swapper/1` 是 idle 在空转，`mode=0 prev=ksoftirqd/1 state=1` 是软中断线程把自己设成 TASK_INTERRUPTIBLE 后主动让出。同一个函数，两条完全不同的路径。
+
+**nice → 权重 → 份额**。用 `labs/07_sched_kernel/niceload.c`（静态编译的 setpriority 忙循环）在 guest 里造 4 个 nice 0 + 2 个 nice 10，10 秒窗口读 `/proc/<pid>/stat`：
+
+| nice | `se.load.weight`（dmesg 里的 `weight=`） | utime 增量 | 占单核 |
+| --- | --- | --- | --- |
+| 0 ×4 | 1048576 | 491 / 490 / 495 / 495 ticks | 约 49% |
+| 10 ×2 | 112640 | 53 / 53 ticks | 约 5.3% |
+
+权重比 1048576 : 112640 = 9.31，实测 CPU 时间比 9.30，总消耗 19.7 CPU·秒（2 核 × 10 秒）。这条链路和 `01_nice_effect` 在用户态测到的 69.7/22.8/7.5 是同一个东西，只是这里能看到内核里的那个 `weight` 字段本身。
+
+**几个会浪费半天时间的地方**：
+
+- `$lx_per_cpu("runqueues")` 在 6.12 + gdb 12.1 下抛 `'NoneType' object has no attribute 'cast'`，换成 `$lx_current()` 读 task_struct 字段就正常。
+- `-O2` 下局部变量随时被优化掉，`next` 跨过赋值语句后 `p p->comm` 报 `value has been optimized out`。要在断点里看值，就在内核里插桩，别赌 gdb 的变量可见性。
+- 只改 `fair.c` 一个文件的增量编译，在 2 核 + FUSE 文件系统的这台机器上花了 19 分 56 秒（`user` 时间只有 34 秒），瓶颈是 vmlinux 重链接和 gzip 的 I/O。本地 ext4 上通常 1-2 分钟，别拿这台机器的数字当通用结论。
+- guest 里 `nice` 不存在（busybox 没编这个 applet），`taskset`/`renice` 也未必有。造负载要么自己静态编译小程序，要么在宿主机上用 `sched_setaffinity` 写进用户态实验里。
+

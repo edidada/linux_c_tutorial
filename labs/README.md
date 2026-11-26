@@ -51,6 +51,11 @@
 | `01_nice_effect` | 三个不同 nice 的忙循环，绑同一 CPU | 实测份额 69.8/22.8/7.4，等于权重比 |
 | `02_wakeup_latency` | 同 CPU 管道 ping-pong 2 万次 | p50 单向 2.2us，p99 5.4us，max 351us |
 
+## 07_sched_kernel
+
+这一组不在用户态跑，要在 QEMU guest 里做：给 `fair.c` 打插桩、重新编译 `bzImage`、看 dmesg 里的 `weight` 和 `vruntime`，再用 `qemu/sched-live.gdb` 断在 `__schedule` 打 20 次调度事件。步骤和实测数字见 `07_sched_kernel/README.md`，内核原理见 `docs/07-sched-deepdive.md` 第 11 节。
+
+
 ## 运行建议
 
 - 先用 `scripts/build_all.sh` 编译并冒烟。
