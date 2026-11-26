@@ -57,6 +57,13 @@ cd qemu && ./setup.sh        # 下载 6.12 源码、编译带调试信息的内�
 
 本仓库在 2 核 4GB 云主机上实测：全量编译 66 分钟，`bzImage` 12MB、`vmlinux` 414MB、initramfs 700KB，TCG 启动约 1.6 秒进 shell，gdb 断在 `start_kernel`、`lx-version` 正常。
 
+## CI
+
+两个 workflow，都在 `edidada/linux_c_tutorial` 上跑过并通过：
+
+- `labs-ci`（`.github/workflows/edidada-ci.yml`）：`make` 编译 15 个用户态实验并逐个冒烟运行，约 12 秒。
+- `kernel-build`（`.github/workflows/kernel-build.yml`）：手动触发或改动 `qemu/` 时运行，ubuntu-24.04 runner 上装 `cpio`/`libelf-dev` 等依赖、缓存内核 tarball、编译 6.12、校验三件产物、QEMU 无 KVM 启动并 grep 串口 banner。实测 11 分 49 秒，产物 12M/418M/684K，`Linux version 6.12.0` 后 1.58 秒进 `Run /init`。
+
 ## 已跑通的实测（本机一次采样，仅代表这台机器）
 
 | 实验 | 关键数字 | 说明 |
