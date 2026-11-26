@@ -88,6 +88,8 @@ fi
 
 echo "编译内核（$(nproc) 并发，首次约 5-15 分钟）..."
 make -j"$(nproc)" bzImage
+# gdb 辅助脚本（lx-ps/lx-dmesg）需要这一步生成的符号常量与软链接，只 build bzImage 不会跑它
+make -j"$(nproc)" scripts_gdb
 
 # ---------- initramfs ----------
 ROOTFS="$BUILD/rootfs"

@@ -20,11 +20,12 @@ chmod +x setup.sh run.sh          # 从 Windows 侧 clone 过来常常丢了执�
 内核 tarball 默认从阿里云镜像下载（约 12MB/s），可用 `KERNEL_MIRROR=...` 覆盖；
 镜像失败会自动回退 kernel.org。`KVER=6.12` 可换版本。
 
-预计 5-15 分钟（16 核；2 核云主机约 45 分钟）。产物：
+预计 5-15 分钟（16 核；2 核云主机实测 66 分钟，`defconfig` 会连 i915、mac80211 一起编）。产物：
 
 ```
 build/linux-6.12/arch/x86/boot/bzImage   启动用
 build/linux-6.12/vmlinux                 gdb 用（带符号）
+build/linux-6.12/vmlinux-gdb.py          lx- 命令的软链接
 build/rootfs.cpio.gz                     initramfs
 ```
 
@@ -41,6 +42,18 @@ gdb -x sched.gdb     # 断在 __schedule 等
 ```
 
 guest 里只有一个 busybox shell，没有 glibc。用户态实验在 WSL 里跑，这里只做内核侧观察和改代码验证。
+
+`lx-ps`/`lx-dmesg` 这些命令来自内核自带的 gdb 脚本，`setup.sh` 末尾的 `make scripts_gdb` 负责生成
+`vmlinux-gdb.py` 软链接和 `scripts/gdb/linux/constants.py`。如果 gdb 提示 `Undefined command`，
+先确认这两个产物在不在。
+
+## 已实测
+
+2 核 4GB 云主机、无 KVM（纯 TCG）：
+
+- 全量编译 66 分钟，`bzImage` 12MB，`vmlinux` 414MB，initramfs 700KB。
+- `GDB_WAIT=0 ./run.sh` 约 1.6 秒进 shell，串口打印 `=== linux_c_tutorial guest ===`。
+- `gdb -x gdb.cmd` 能停在 `start_kernel`（init/main.c:904），`lx-version`、`p init_task.pid` 正常。
 
 ## 改内核的循环
 

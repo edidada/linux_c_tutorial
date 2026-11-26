@@ -55,6 +55,8 @@ cd qemu && ./setup.sh        # 下载 6.12 源码、编译带调试信息的内�
 
 第一次编译内核 5-15 分钟，之后增量改一行大约几十秒。
 
+本仓库在 2 核 4GB 云主机上实测：全量编译 66 分钟，`bzImage` 12MB、`vmlinux` 414MB、initramfs 700KB，TCG 启动约 1.6 秒进 shell，gdb 断在 `start_kernel`、`lx-version` 正常。
+
 ## 已跑通的实测（本机一次采样，仅代表这台机器）
 
 | 实验 | 关键数字 | 说明 |

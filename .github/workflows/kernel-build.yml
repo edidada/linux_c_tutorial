@@ -1,0 +1,48 @@
+name: kernel-build
+
+# 只在手动触发或改动 qemu/ 时跑：全量编译内核在 GitHub 免费 runner 上约 15-25 分钟
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'qemu/**'
+      - '.github/workflows/kernel-build.yml'
+
+jobs:
+  build-and-boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 flex bison bc libelf-dev libssl-dev cpio xz-utils
+
+      - name: 缓存内核 tarball
+        uses: actions/cache@v4
+        with:
+          path: qemu/build/linux-6.12.tar.xz
+          key: linux-6.12-tar-v1
+
+      - name: 编译内核与 initramfs
+        run: |
+          cd qemu
+          KERNEL_MIRROR=https://cdn.kernel.org/pub/linux/kernel ./setup.sh
+
+      - name: 产物信息
+        run: |
+          ls -lh qemu/build/linux-6.12/arch/x86/boot/bzImage \
+                 qemu/build/linux-6.12/vmlinux \
+                 qemu/build/rootfs.cpio.gz
+
+      - name: QEMU 启动冒烟（TCG，无 KVM）
+        run: |
+          cd qemu
+          GDB_WAIT=0 timeout 180 ./run.sh < /dev/null > /tmp/serial.log 2>&1 || true
+          grep -q "linux_c_tutorial guest" /tmp/serial.log
+          grep -E "Linux version|Run /init" /tmp/serial.log | head -3
+          tail -20 /tmp/serial.log
