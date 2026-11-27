@@ -49,6 +49,21 @@ static unsigned long minflt_now(void)
 	return ru.ru_minflt;
 }
 
+/* /proc/self/statm 第 2 字段：resident 页数（和 VmRSS 同源，单位是页） */
+static long rss_pages(void)
+{
+	FILE *f = fopen("/proc/self/statm", "r");
+	long size = -1, resident = -1;
+
+	if (!f)
+		return -1;
+	if (fscanf(f, "%ld %ld", &size, &resident) != 2)
+		resident = -1;
+	fclose(f);
+	(void)size;
+	return resident;
+}
+
 int main(void)
 {
 	char *p;
@@ -62,6 +77,26 @@ int main(void)
 	vp = p;
 
 	printf("touchmem: 映射 %lu MB = %lu 页\n", N / MB, N / 4096);
+
+	/* 对照组：只读同样 4MB（另一块同样的匿名映射）。
+	   缺页次数不会少，但物理页不该涨——读匿名缺页拿的是共享 zero page，
+	   内核不分配页框、也不加 RSS。写缺页才真的分配。 */
+	{
+		char *q;
+		volatile char *vq;
+		volatile unsigned long sink = 0;
+		unsigned long u0 = minflt_now();
+		long r0 = rss_pages();
+
+		q = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (q == MAP_FAILED) { perror("mmap(read)"); return 1; }
+		vq = q;
+		for (i = 0; i < N; i += 4096)
+			sink += vq[i];      /* volatile 读，防止整段被优化掉 */
+		printf("touchmem: 只读一轮 minflt = %lu，RSS 增量 = %ld 页（读缺页走 zero page，不分配）\n",
+		       minflt_now() - u0, rss_pages() - r0);
+		munmap(q, N);
+	}
 
 	p0 = proc_stat_minflt();
 	t0 = minflt_now();
