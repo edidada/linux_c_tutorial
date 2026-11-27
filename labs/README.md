@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | `01_brk_mmap` | 三个不同大小的 malloc | 小对象在 [heap]，8MB 走独立 mmap；RSS 只在写入后涨 |
 | `02_page_fault` | 匿名写、文件冷读、文件热读 | minflt 65536；majflt 8192；热读 512（fault-around 16 页/次） |
-| `touchmem` | 4MB `memset`，两轮 | 首轮 minflt=1024（每页 1 次），第二轮 0；配合 `qemu/fault.gdb` 数 `do_anonymous_page` |
+| `touchmem` | `mmap` 4MB 后逐页写两轮 | 首轮 minflt=1024（每页 1 次），第二轮不涨；配合 `qemu/fault.gdb` 数 `do_anonymous_page` |
 | `03_mmap_shared` | SHARED 与 PRIVATE 对比 | SHARED 跨进程可见并落盘；PRIVATE 不传播、不落盘 |
 
 ## 04_file

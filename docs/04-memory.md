@@ -141,39 +141,43 @@ private.bin 磁盘内容 = init
 
 ## 内核侧实测：一次匿名缺页到底做了什么
 
-用户态数出 minflt 只是结果，要看到过程得在 QEMU 里断点。脚本 `qemu/fault.gdb`，负载是 `labs/03_memory/touchmem.c`（静态编译后塞进 initramfs，4MB `memset`）。
+用户态数出 minflt 只是结果，要看到过程得在 QEMU 里断点。脚本 `qemu/fault.gdb`，负载是 `labs/03_memory/touchmem.c`（静态编译后塞进 initramfs）：`mmap` 4MB 匿名内存，逐页写一遍。
 
 `touchmem` 在 guest 里打印：
 
 ```
-touchmem: 写了 4 MB = 1024 页
-touchmem: 首轮 minflt = 1024（每页 1.00 次），进程累计 minflt = 1065
-touchmem: 第二轮 minflt = 0（页已驻留，不该再涨）
+touchmem: 映射 4 MB = 1024 页
+touchmem: 首轮 getrusage minflt = 1024（每页 1.00 次）
+touchmem: 首轮 /proc/self/stat 增量 = 1024（同一本账的另一种读法）
+touchmem: 第二轮 getrusage = 2, /proc/stat 增量 = 2（页已驻留）
 ```
 
-gdb 侧 `do_anonymous_page` 命中 1024 次，前三个命中：
+gdb 侧 `do_anonymous_page` 命中 1024 次（整轮启动共 1050 次，多出来的是 shell 和 init 的页）。前三个命中：
 
 ```
-[1] addr=0x7fffffffe000 vma=[0x7fffffffe000,0x7ffffffff000) flags=0x118173
-[2] addr=0x37b99000     vma=[0x37b99000,0x37b9a000)          flags=0x100073
-[3] addr=0x7f702beec000 vma=[0x7f702beec000,0x7f702beed000) flags=0x100073
-[hit 128] addr=0x7f65ec457000
-...
-[hit 1024] addr=0x7f65ec6d5000
+[1] addr=0x7fffffffe000 vma=[0x7fffffffe000,0x7ffffffff000) len=0x1000  flags=0x118173
+[2] addr=0x7ffcdeb6a000 vma=[0x7ffcdeb4b000,0x7ffcdeb6c000) len=0x21000 flags=0x100173
+[3] addr=0x2a747000     vma=[0x2a747000,0x2a748000)         len=0x1000  flags=0x100073
+=== 第 1024 次命中 addr=0x7f2fe5b38000，到这里正好覆盖 4MB 映射 ===
 ```
 
-怎么读这三行：
+怎么读这几行：
 
-- `addr` 是本次缺页的虚拟地址；`vma` 是它所属的区间，和 `/proc/<pid>/maps` 的某一行能对上。命中地址按 `0x1000` 线性递增，说明是 4MB 匿名映射被逐页触碰，一页一次。
-- `flags=0x118173` = `VM_READ|VM_WRITE|VM_GROWSDOWN|VM_ACCOUNT`，这是栈：起点 `0x7fffffffe000` 紧贴用户空间顶部，`VM_GROWSDOWN` 说明栈可以向下自动扩展。
+- `addr` 是本次缺页的虚拟地址，`vma` 是它所属的区间，和 `/proc/<pid>/maps` 的某一行能对上。touchmem 那 1024 次命中的地址按 `0x1000` 线性递增，说明是 4MB 匿名映射被逐页触碰，一页一次。
+- `flags=0x118173` = `VM_READ|VM_WRITE|VM_GROWSDOWN|VM_ACCOUNT`（外加 `madvise` 留下的 SEQ/RAND 位）：栈。起点 `0x7fffffffe000` 紧贴用户空间顶部，`VM_GROWSDOWN` 说明栈能向下自动扩展。
+- `flags=0x100173` = 同样有 `VM_GROWSDOWN`，区间长度 `0x21000`：栈向下长出来的那段。
 - `flags=0x100073` = `VM_READ|VM_WRITE|VM_ACCOUNT`，没有 `VM_GROWSDOWN`：堆或单页匿名映射。
-- 第二轮逐页写 minflt 为 0，因为页已经 resident，`do_anonymous_page` 不再进入——PTE 存在时走的是别的路径，根本到不了缺页处理。
+- 第二轮逐页写只多了 2 次缺页，且与这 4MB 无关（printf 自己申请缓冲区）。PTE 已经在时，`do_anonymous_page` 根本不会被调用。
 
-计数能对上的原因：`handle_mm_fault` → `do_anonymous_page` 每次分配一页，同时 `mm->rss_stat` 与进程的 minflt 计数各加一。1024 页 = 1024 次，不是约等于。
+计数能对上的原因：`handle_mm_fault` → `do_anonymous_page` 每次分配一页，进程的 minflt 计数同步加一。1024 页 = 1024 次，不是约等于。
+
+两个写这类程序必踩的坑：
+
+- **不要用 `malloc` 造这个实验**。glibc 的 chunk 头和首个元素同页，第一页已经 resident，count 会变成 1023。用 `mmap` 匿名映射，VMA 干净，才是干净的 1024。
+- **写操作必须走 `volatile`**。`memset(p, 0x5a, N)` 之后如果没有人读这块内存，`-O2` 会直接把整段写优化掉，缺页变成 0——这不是内核不记账，是用户态根本没碰内存。
 
 几个操作细节：
 
-- `hbreak` 而不是 `break`：内核代码段只读，软件断点要改内存，硬件断点（x86 调试寄存器）更稳，且这里只有 1-2 个断点。
-- gdb 会在 `Thread 1.1` / `1.2` 之间来回切，因为两个 vCPU 都在缺页，断在哪核就停在哪个线程，不是脚本错。
-- 用 `if $n >= 1200` 自己收尾再 `detach`，否则 batch 模式会一直停在断点上把 guest 卡死。
-
+- `hbreak` 而不是 `break`：内核代码段只读，软件断点要改内存，硬件断点更稳，这里只有 1-2 个断点。
+- gdb 会在 `Thread 1.1` / `1.2` 之间来回切，两个 vCPU 都在缺页，断在哪核就停在哪个线程，不是脚本错。
+- 用 `if $n >= 1050` 自己收尾再 `detach`，否则 batch 模式会一直停在断点上把 guest 卡死。
