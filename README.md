@@ -77,6 +77,7 @@ cd qemu && ./setup.sh        # 下载 6.12 源码、编译带调试信息的内�
 | fork_cow | fork 0.101 ms；64MB 逐页写 41.4 ms（16384 次 COW 缺页） | fork 只复制页表，复制页推迟到写时 |
 | brk_mmap | 8MB malloc 不在 [heap]，RSS 写入后 +8188 KB，free 后归还 | 虚拟内存与物理页是两件事 |
 | page_fault | 256MB 匿名写 minflt 65536；冷读 32MB 文件 majflt 8192；热读 minflt 512 | 4KB 一页；热读的 512 次是 fault-around 批量映射 |
+| 匿名缺页（QEMU + gdb） | 4MB = 1024 页 → minflt 1024，`do_anonymous_page` 命中 1024 次；栈 VMA flags=0x118173 含 `VM_GROWSDOWN` | 缺页计数与内核函数命中数 1:1 对齐 |
 | page_cache | 冷读 1.24 GB/s，热读 10.2 GB/s | page cache 命中与读盘差 8 倍 |
 | fsync_cost | 每条 fsync 1575 us，每 50 条 58 us，最后刷一次 23.8 us | 等待日志提交的次数决定成本 |
 | nice_effect | nice 0/5/10 实测 69.8% / 22.8% / 7.4%，理论 69.7/22.8/7.5 | 必须绑到同一个 CPU，否则 nice 无效 |

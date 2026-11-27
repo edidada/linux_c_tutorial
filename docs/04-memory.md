@@ -138,3 +138,42 @@ private.bin 磁盘内容 = init
 - `madvise(MADV_DONTNEED)` 对匿名页是「丢弃内容」，下次读是 0，不是「保留」。
 - `fork` 后子进程 RSS 的统计口径受共享页影响，别拿父子 RSS 直接相加。
 - THP 会让缺页计数、RSS 粒度都变成 2MB，做对比实验前先关掉。
+
+## 内核侧实测：一次匿名缺页到底做了什么
+
+用户态数出 minflt 只是结果，要看到过程得在 QEMU 里断点。脚本 `qemu/fault.gdb`，负载是 `labs/03_memory/touchmem.c`（静态编译后塞进 initramfs，4MB `memset`）。
+
+`touchmem` 在 guest 里打印：
+
+```
+touchmem: 写了 4 MB = 1024 页
+touchmem: 首轮 minflt = 1024（每页 1.00 次），进程累计 minflt = 1065
+touchmem: 第二轮 minflt = 0（页已驻留，不该再涨）
+```
+
+gdb 侧 `do_anonymous_page` 命中 1024 次，前三个命中：
+
+```
+[1] addr=0x7fffffffe000 vma=[0x7fffffffe000,0x7ffffffff000) flags=0x118173
+[2] addr=0x37b99000     vma=[0x37b99000,0x37b9a000)          flags=0x100073
+[3] addr=0x7f702beec000 vma=[0x7f702beec000,0x7f702beed000) flags=0x100073
+[hit 128] addr=0x7f65ec457000
+...
+[hit 1024] addr=0x7f65ec6d5000
+```
+
+怎么读这三行：
+
+- `addr` 是本次缺页的虚拟地址；`vma` 是它所属的区间，和 `/proc/<pid>/maps` 的某一行能对上。命中地址按 `0x1000` 线性递增，说明是 4MB 匿名映射被逐页触碰，一页一次。
+- `flags=0x118173` = `VM_READ|VM_WRITE|VM_GROWSDOWN|VM_ACCOUNT`，这是栈：起点 `0x7fffffffe000` 紧贴用户空间顶部，`VM_GROWSDOWN` 说明栈可以向下自动扩展。
+- `flags=0x100073` = `VM_READ|VM_WRITE|VM_ACCOUNT`，没有 `VM_GROWSDOWN`：堆或单页匿名映射。
+- 第二轮逐页写 minflt 为 0，因为页已经 resident，`do_anonymous_page` 不再进入——PTE 存在时走的是别的路径，根本到不了缺页处理。
+
+计数能对上的原因：`handle_mm_fault` → `do_anonymous_page` 每次分配一页，同时 `mm->rss_stat` 与进程的 minflt 计数各加一。1024 页 = 1024 次，不是约等于。
+
+几个操作细节：
+
+- `hbreak` 而不是 `break`：内核代码段只读，软件断点要改内存，硬件断点（x86 调试寄存器）更稳，且这里只有 1-2 个断点。
+- gdb 会在 `Thread 1.1` / `1.2` 之间来回切，因为两个 vCPU 都在缺页，断在哪核就停在哪个线程，不是脚本错。
+- 用 `if $n >= 1200` 自己收尾再 `detach`，否则 batch 模式会一直停在断点上把 guest 卡死。
+

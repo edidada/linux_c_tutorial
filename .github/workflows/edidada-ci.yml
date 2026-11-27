@@ -33,6 +33,7 @@ jobs:
           ./build/03_memory/01_brk_mmap
           ./build/03_memory/03_mmap_shared
           ./build/03_memory/02_page_fault | tail -12
+          ./build/03_memory/touchmem
 
       - name: 文件冒烟
         run: |
