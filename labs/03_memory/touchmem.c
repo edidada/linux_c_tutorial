@@ -74,6 +74,10 @@ int main(void)
 	       t1 - t0, (double)(t1 - t0) / (N / 4096));
 	printf("touchmem: 首轮 /proc/self/stat 增量 = %ld（同一本账的另一种读法）\n",
 	       p1 - p0);
+	/* 两个采样点之间要 fopen+fscanf+读目录项，这一步自己也会缺页，
+	   所以 stat 口径常常比 getrusage 多 1~2 次，不是记账不一致 */
+	if (p1 - p0 != (long)(t1 - t0))
+		printf("touchmem: 差值来自读 /proc/self/stat 自身产生的缺页，不是账错了\n");
 
 	/* 再逐页写一遍：页已经 resident，不应该再产生缺页 */
 	for (i = 0; i < N; i += 4096)
@@ -82,7 +86,11 @@ int main(void)
 	p2 = proc_stat_minflt();
 	printf("touchmem: 第二轮 getrusage = %lu, /proc/stat 增量 = %ld（页已驻留）\n",
 	       t2 - t1, p2 - p1);
-	printf("touchmem: 第二轮剩的几次是 printf 自己申请缓冲造成的，与这 4MB 无关\n");
+	if (t2 != t1)
+		printf("touchmem: 剩下这 %lu 次是 printf 自己的缓冲等其它页，与这 4MB 无关\n",
+		       t2 - t1);
+	else
+		printf("touchmem: 第二轮 0 次，4MB 一页都没再进缺页路径\n");
 
 	return 0;
 }

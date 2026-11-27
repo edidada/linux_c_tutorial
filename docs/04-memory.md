@@ -167,7 +167,8 @@ gdb 侧 `do_anonymous_page` 命中 1024 次（整轮启动共 1050 次，多出�
 - `flags=0x118173` = `VM_READ|VM_WRITE|VM_GROWSDOWN|VM_ACCOUNT`（外加 `madvise` 留下的 SEQ/RAND 位）：栈。起点 `0x7fffffffe000` 紧贴用户空间顶部，`VM_GROWSDOWN` 说明栈能向下自动扩展。
 - `flags=0x100173` = 同样有 `VM_GROWSDOWN`，区间长度 `0x21000`：栈向下长出来的那段。
 - `flags=0x100073` = `VM_READ|VM_WRITE|VM_ACCOUNT`，没有 `VM_GROWSDOWN`：堆或单页匿名映射。
-- 第二轮逐页写只多了 2 次缺页，且与这 4MB 无关（printf 自己申请缓冲区）。PTE 已经在时，`do_anonymous_page` 根本不会被调用。
+- 第二轮逐页写在 guest 里只多 2 次（printf 自己申请的缓冲页），在 CI runner 上是 0 次；两种都对，差别只在那几个额外页是否已经驻留。PTE 已经在时，`do_anonymous_page` 根本不会被调用。
+- `/proc/self/stat` 的口径偶尔比 `getrusage` 多 2 次（CI 上 1026 vs 1024）：两个采样点之间要 `fopen`+`fscanf` 读 `/proc`，这一步自己也会缺页。同一本账，读数动作本身会产生噪声。
 
 计数能对上的原因：`handle_mm_fault` → `do_anonymous_page` 每次分配一页，进程的 minflt 计数同步加一。1024 页 = 1024 次，不是约等于。
 
