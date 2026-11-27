@@ -36,7 +36,8 @@ linux_c_tutorial/
     ├── 06-qemu-gdb.md        QEMU + gdb 环境与单步方法
     ├── 07-sched-deepdive.md  调度子系统：数据结构与关键函数
     ├── 08-reading-map.md     《LKD》《ULK》章节对照 + 源码地图
-    └── 09-rss-anatomy.md     收口：RSS 高但堆不大的闭环排查
+    ├── 09-rss-anatomy.md     收口：RSS 高但堆不大的闭环排查
+    └── 10-causal-chain.md     一页纸因果链 + 实测/抄书复盘
 ```
 
 ## 环境
@@ -92,6 +93,7 @@ cd qemu && ./setup.sh        # 下载 6.12 源码、编译带调试信息的内�
 2. 每个实验先猜输出，再运行，再读源码验证；猜错的地方最有价值。
 3. 四条线（syscall/process/memory/file）跑完后，做 `docs/07-sched-deepdive.md` 的六个实验。
 4. 最后进 QEMU，在 `__schedule`、`pick_next_task_fair`、`handle_mm_fault` 上打断点，把前面看到的数字在 gdb 里对一遍。
+5. 想直接看结论：`docs/10-causal-chain.md`（一页纸因果链，标了哪些是实测、哪些还没跑）。
 
 ## 书怎么配合
 
